@@ -13,16 +13,44 @@ import pandas as pd
 from flask import Flask, jsonify, render_template, request
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "model" / "decisiontree.pkl"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("loanlens")
 
 app = Flask(__name__)
 
+
+def find_model_file() -> Path:
+    """Locate the .pkl no matter where it was placed in the repo.
+
+    Checks (case-insensitively) the repo root and ./model first, then
+    searches the whole project for any file ending in .pkl whose name
+    contains 'decisiontree'; finally falls back to any single .pkl.
+    """
+    env_path = os.environ.get("MODEL_PATH")
+    if env_path and Path(env_path).is_file():
+        return Path(env_path)
+
+    all_pkls = [p for p in BASE_DIR.rglob("*") if p.is_file() and p.suffix.lower() == ".pkl"]
+    log.info("Files in project root: %s", sorted(p.name for p in BASE_DIR.iterdir()))
+    log.info("Found .pkl files: %s", [str(p.relative_to(BASE_DIR)) for p in all_pkls])
+
+    for p in all_pkls:
+        if "decisiontree" in p.name.lower().replace("_", "").replace("-", "").replace(" ", ""):
+            return p
+    if all_pkls:
+        return all_pkls[0]
+    raise FileNotFoundError(
+        "No .pkl model file found in the repository. Commit your model file "
+        "(e.g. model/decisiontree.pkl) to GitHub and redeploy."
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Model
 # --------------------------------------------------------------------------- #
+MODEL_PATH = find_model_file()
+log.info("Loading model from %s", MODEL_PATH)
 with open(MODEL_PATH, "rb") as fh:
     model = pickle.load(fh)
 
