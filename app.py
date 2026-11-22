@@ -17,7 +17,11 @@ BASE_DIR = Path(__file__).resolve().parent
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("loanlens")
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / "templates"),
+    static_folder=str(BASE_DIR / "static"),
+)
 
 
 def find_model_file() -> Path:
@@ -53,6 +57,10 @@ MODEL_PATH = find_model_file()
 log.info("Loading model from %s", MODEL_PATH)
 with open(MODEL_PATH, "rb") as fh:
     model = pickle.load(fh)
+
+for _name in ("templates/index.html", "static/style.css", "static/app.js"):
+    if not (BASE_DIR / _name).is_file():
+        log.error("MISSING FILE in repo: %s  (commit the whole folder to GitHub)", _name)
 
 FEATURE_ORDER = list(model.feature_names_in_)
 log.info("Model loaded. Features: %s", FEATURE_ORDER)
@@ -185,6 +193,20 @@ def risk_notes(row: pd.Series) -> list:
 # --------------------------------------------------------------------------- #
 # Routes
 # --------------------------------------------------------------------------- #
+@app.errorhandler(Exception)
+def handle_error(exc):
+    """Log the full traceback to Render logs and show the real reason."""
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(exc, HTTPException):
+        return exc
+    log.exception("Unhandled error on %s", request.path)
+    msg = f"{type(exc).__name__}: {exc}"
+    if request.path == "/predict":
+        return jsonify(ok=False, error=msg), 500
+    return f"<h2>Server error</h2><pre>{msg}</pre>", 500
+
+
 @app.get("/")
 def index():
     return render_template("index.html", **UI_OPTIONS)
